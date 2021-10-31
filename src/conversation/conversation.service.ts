@@ -81,11 +81,19 @@ export class ConversationService {
       { senderId: userId, conversationId: conversation._id, content },
     );
     let message = await lastValueFrom(message$);
+    const user$ = this.httpService.get(`${process.env.USER_URL}/${userId}`);
+    const user = await lastValueFrom(user$);
+    const user2$ = this.httpService.get(`${process.env.USER_URL}/${userId2}`);
+    const user2 = await lastValueFrom(user2$);
 
     return {
       conversation1: {
         ...member1,
-        conversation: { ...conversation, title: nickName2 },
+        conversation: {
+          ...conversation,
+          title: nickName2,
+          avatar: user2.data.avatar,
+        },
         lastMessage: {
           ...message.data,
           nickName,
@@ -93,7 +101,11 @@ export class ConversationService {
       },
       conversation2: {
         ...member2,
-        conversation: { ...conversation, title: nickName },
+        conversation: {
+          ...conversation,
+          title: nickName,
+          avatar: user.data.avatar,
+        },
         lastMessage: {
           ...message.data,
           nickName,
@@ -137,5 +149,19 @@ export class ConversationService {
     let { data } = await lastValueFrom(member$);
 
     return data;
+  }
+
+  async getFriendId(id) {
+    const res$ = this.httpService.get(
+      `${process.env.GROUP_URL}/member/friend?id=${id}`,
+    );
+    let res = await lastValueFrom(res$);
+    let listFriend = [];
+    for await (const e of res.data) {
+      const user$ = this.httpService.get(`${process.env.USER_URL}/${e}`);
+      const { data } = await lastValueFrom(user$);
+      listFriend.push(data);
+    }
+    return listFriend;
   }
 }

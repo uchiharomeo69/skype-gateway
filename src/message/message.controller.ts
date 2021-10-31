@@ -1,7 +1,16 @@
 import { ConversationService } from './../conversation/conversation.service';
 import { lastValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
-import { Controller, Post, Get, Param, Body, Query } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Param,
+  Body,
+  Query,
+  Res,
+  ForbiddenException,
+} from '@nestjs/common';
 
 @Controller('message')
 export class MessageController {
@@ -24,6 +33,13 @@ export class MessageController {
       if (member) {
         element.nickName = member.nickName;
       }
+      const user$ = this.httpService.get(
+        `${process.env.USER_URL}/${element.senderId}`,
+      );
+      const { data } = await lastValueFrom(user$);
+      if (data) {
+        element.user = data;
+      }
     }
     return {
       status: 200,
@@ -33,19 +49,34 @@ export class MessageController {
   }
 
   @Post()
-  async create(@Body() body) {
-    const { senderId, conversationId, content } = body;
+  async create(@Res() res, @Body() body) {
+    const user = res.locals.user;
 
+    const { senderId, conversationId, content } = body;
+    if (user._id != senderId) {
+      throw new ForbiddenException({ status: 403, message: 'k có quyền' });
+    }
     let message$ = await this.httpService.post(
       `${process.env.MESSAGE_URL}/message`,
       { senderId, conversationId, content },
     );
     let message = await lastValueFrom(message$);
-
-    return {
+    let member = await this.converSationService.getMember(
+      senderId,
+      conversationId,
+    );
+    if (member) {
+      message.data.nickName = member.nickName;
+    }
+    const user$ = this.httpService.get(`${process.env.USER_URL}/${senderId}`);
+    const { data } = await lastValueFrom(user$);
+    if (data) {
+      message.data.user = data;
+    }
+    res.send({
       status: 200,
       message: 'send message',
       data: message.data,
-    };
+    });
   }
 }

@@ -5,6 +5,7 @@ import {
   Logger,
   Param,
   Post,
+  Query,
   Res,
 } from '@nestjs/common';
 import { ConversationService } from './conversation.service';
@@ -33,6 +34,11 @@ export class ConversationController {
       data: await this.conversationService.getLastMessage(conversationId),
     };
   }
+  @Post('/group')
+  async createGroup(@Body() body) {
+    console.log(body);
+  }
+
   @Post('/direct')
   async createDirectContact(@Body() body) {
     const { userId, userId2, nickName, nickName2, type, content } = body;
@@ -48,5 +54,16 @@ export class ConversationController {
         content,
       }),
     };
+  }
+
+  @Get('/friend')
+  async getFriend(@Res() res) {
+    const { _id } = res.locals.user;
+
+    res.send({
+      status: 200,
+      message: 'List Friend',
+      data: await this.conversationService.getFriendId(_id),
+    });
   }
 }
