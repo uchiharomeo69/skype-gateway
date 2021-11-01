@@ -1,11 +1,11 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Logger,
   Param,
   Post,
-  Query,
   Res,
 } from '@nestjs/common';
 import { ConversationService } from './conversation.service';
@@ -35,8 +35,23 @@ export class ConversationController {
     };
   }
   @Post('/group')
-  async createGroup(@Body() body) {
-    console.log(body);
+  async createGroup(@Body() body, @Res() res) {
+    const { members, creator, title } = body;
+    if (res.locals.user._id != creator._id) {
+      throw new ForbiddenException({
+        status: 403,
+        message: 'K có quyền truy cập',
+      });
+    }
+    res.send({
+      status: 200,
+      message: 'Thanh cong',
+      data: await this.conversationService.createGroup({
+        members,
+        creator,
+        title,
+      }),
+    });
   }
 
   @Post('/direct')

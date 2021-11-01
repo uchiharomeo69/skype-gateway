@@ -10,13 +10,16 @@ import {
   Query,
   Res,
   ForbiddenException,
+  Inject,
+  CACHE_MANAGER,
 } from '@nestjs/common';
-
+import { Cache } from 'cache-manager';
 @Controller('message')
 export class MessageController {
   constructor(
     private httpService: HttpService,
     private converSationService: ConversationService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
   // get message by conversationId
   @Get('/:id')
@@ -24,21 +27,28 @@ export class MessageController {
     let message$ = await this.httpService.get(
       `${process.env.MESSAGE_URL}/message/${id}?skip=${skip}`,
     );
+
     const message = await lastValueFrom(message$);
     for await (const element of message.data) {
-      let member = await this.converSationService.getMember(
+      const member = await this.converSationService.getMember(
         element.senderId,
         id,
       );
-      if (member) {
-        element.nickName = member.nickName;
-      }
-      const user$ = this.httpService.get(
-        `${process.env.USER_URL}/${element.senderId}`,
-      );
-      const { data } = await lastValueFrom(user$);
-      if (data) {
-        element.user = data;
+
+      element.nickName = member.nickName;
+
+      const user = await this.cacheManager.get(element.senderId);
+      if (!user) {
+        const user$ = this.httpService.get(
+          `${process.env.USER_URL}/${element.senderId}`,
+        );
+        const { data } = await lastValueFrom(user$);
+        await this.cacheManager.set(element.senderId, data, { ttl: 3600 });
+        if (data) {
+          element.user = data;
+        }
+      } else {
+        element.user = user;
       }
     }
     return {
@@ -56,6 +66,7 @@ export class MessageController {
     if (user._id != senderId) {
       throw new ForbiddenException({ status: 403, message: 'k có quyền' });
     }
+
     let message$ = await this.httpService.post(
       `${process.env.MESSAGE_URL}/message`,
       { senderId, conversationId, content },
@@ -68,11 +79,19 @@ export class MessageController {
     if (member) {
       message.data.nickName = member.nickName;
     }
-    const user$ = this.httpService.get(`${process.env.USER_URL}/${senderId}`);
-    const { data } = await lastValueFrom(user$);
-    if (data) {
-      message.data.user = data;
+
+    const user1 = await this.cacheManager.get(senderId);
+    if (!user1) {
+      const user$ = this.httpService.get(`${process.env.USER_URL}/${senderId}`);
+      const { data } = await lastValueFrom(user$);
+      if (data) {
+        message.data.user = data;
+      }
+      await this.cacheManager.set(senderId, data, { ttl: 3600 });
+    } else {
+      message.data.user = user1;
     }
+
     res.send({
       status: 200,
       message: 'send message',

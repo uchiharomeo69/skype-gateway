@@ -1,14 +1,16 @@
 import { HttpService } from '@nestjs/axios';
-import { Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER, Inject, Injectable } from '@nestjs/common';
 import { ClientGrpc } from '@nestjs/microservices';
 import { isEmpty } from 'lodash';
 import { lastValueFrom } from 'rxjs';
+import { Cache } from 'cache-manager';
 
 @Injectable()
 export class ConversationService {
   private userService;
   constructor(
     @Inject('user_package') private client: ClientGrpc,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
 
     private httpService: HttpService,
   ) {}
@@ -24,16 +26,20 @@ export class ConversationService {
 
     // all conversation by user
     let member = await lastValueFrom(member$);
+
     for await (const element of member.data) {
       let lastMessage = await this.getLastMessage(element.conversation._id);
 
-      let avatar$ = await this.httpService.get(
-        `${process.env.USER_URL}/${element.conversation.avatar}`,
-      );
+      if (!element.conversation.avatar.includes('https:')) {
+        let avatar$ = await this.httpService.get(
+          `${process.env.USER_URL}/${element.conversation.avatar}`,
+        );
 
-      let { data } = await lastValueFrom(avatar$);
+        let { data } = await lastValueFrom(avatar$);
 
-      element.conversation.avatar = data.avatar ? data.avatar : '';
+        element.conversation.avatar = data.avatar ? data.avatar : '';
+      }
+
       if (isEmpty(lastMessage)) {
         element.lastMessage = null;
         continue;
@@ -49,7 +55,6 @@ export class ConversationService {
         element.lastMessage = lastMessage;
       }
     }
-
     return member.data;
   }
 
@@ -59,6 +64,28 @@ export class ConversationService {
     );
     let { data } = await lastValueFrom(conversation$);
     return data;
+  }
+  async createGroup({ members, creator, title }) {
+    const conversation: any = await this.create({ title, type: 'group' });
+    const rsMembers = [];
+    for await (const member of members) {
+      const rs = await this.createMember({
+        userId: member._id,
+        conversationId: conversation._id,
+        nickName: member.name,
+      });
+      rsMembers.push(rs);
+    }
+    const rsCreator = await this.createMember({
+      userId: creator._id,
+      conversationId: conversation._id,
+      nickName: creator.name,
+    });
+    return {
+      conversation,
+      rsMembers,
+      rsCreator,
+    };
   }
 
   async createContact({ userId, userId2, nickName, nickName2, type, content }) {
@@ -81,6 +108,7 @@ export class ConversationService {
       { senderId: userId, conversationId: conversation._id, content },
     );
     let message = await lastValueFrom(message$);
+
     const user$ = this.httpService.get(`${process.env.USER_URL}/${userId}`);
     const user = await lastValueFrom(user$);
     const user2$ = this.httpService.get(`${process.env.USER_URL}/${userId2}`);
@@ -143,12 +171,19 @@ export class ConversationService {
   }
 
   async getMember(userId: string, conversationId: string) {
-    let member$ = this.httpService.get(
-      `${process.env.GROUP_URL}/member?userId=${userId}&conversationId=${conversationId}`,
-    );
-    let { data } = await lastValueFrom(member$);
+    let member: any = await this.cacheManager.get(userId + conversationId);
+    if (!member) {
+      let member$ = this.httpService.get(
+        `${process.env.GROUP_URL}/member?userId=${userId}&conversationId=${conversationId}`,
+      );
+      let { data } = await lastValueFrom(member$);
 
-    return data;
+      await this.cacheManager.set(userId + conversationId, data, {
+        ttl: 3600,
+      });
+      member = data;
+    }
+    return member;
   }
 
   async getFriendId(id) {

@@ -1,5 +1,5 @@
+import { CacheModule, Global, Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { Global, Module } from '@nestjs/common';
 
 import { HttpModule } from '@nestjs/axios';
 import { join } from 'path';
@@ -19,7 +19,8 @@ import { join } from 'path';
       },
     ]),
     HttpModule.register({ timeout: 30000 }),
+    CacheModule.register(),
   ],
-  exports: [ClientsModule, HttpModule],
+  exports: [ClientsModule, HttpModule, CacheModule],
 })
 export class GlobalModule {}
